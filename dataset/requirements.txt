@@ -1,0 +1,7 @@
+youtube-transcript-api
+nltk
+scikit-learn
+pandas
+openpyxl
+joblib
+flask
