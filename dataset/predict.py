@@ -1,84 +1,80 @@
 import joblib
-import re
-import pandas as pd
+import requests
+from bs4 import BeautifulSoup
 from youtube_transcript_api import YouTubeTranscriptApi
-from youtube_transcript_api._errors import TranscriptsDisabled, NoTranscriptFound
 
-# ===============================
-# LOAD MODEL & VECTORIZER
-# ===============================
 model = joblib.load("harm_model.pkl")
 vectorizer = joblib.load("tfidf_vectorizer.pkl")
 
-# ===============================
-# LOAD HARMFUL WORDS
-# ===============================
-with open("harmful_words.txt", "r", encoding="utf-8") as f:
-    harmful_words = set(f.read().lower().split())
+# LOAD CATEGORY WORDS
+categories = {}
+current = None
 
-# ===============================
-# FUNCTIONS
-# ===============================
+with open("harmful_words.txt") as f:
+    for line in f:
+        line = line.strip().lower()
+        if line.startswith("["):
+            current = line[1:-1]
+            categories[current] = []
+        elif line and current:
+            categories[current].append(line)
+
 def extract_video_id(url):
-    match = re.search(r"v=([a-zA-Z0-9_-]+)", url)
-    if not match:
-        raise Exception("❌ Invalid YouTube URL")
-    return match.group(1)
+    if "youtu.be/" in url:
+        return url.split("youtu.be/")[1].split("?")[0]
+    if "/live/" in url:
+        return url.split("/live/")[1].split("?")[0]
+    if "v=" in url:
+        return url.split("v=")[1].split("&")[0]
+    raise ValueError("Invalid YouTube URL")
 
-def get_text_from_youtube(video_id):
-    """
-    Try transcript first.
-    If not available, fallback to title + description.
-    """
-    # 1️⃣ Try transcript
+def get_text(vid):
     try:
-        transcript = YouTubeTranscriptApi.get_transcript(video_id)
-        return " ".join([x['text'] for x in transcript]), "Transcript"
-    except Exception:
-        pass
-
-    # 2️⃣ Fallback: title + description (safe)
-    try:
-        import requests
-        from bs4 import BeautifulSoup
-
-        url = f"https://www.youtube.com/watch?v={video_id}"
-        html = requests.get(url).text
+        t = YouTubeTranscriptApi.get_transcript(vid)
+        return " ".join(x['text'] for x in t), "Transcript"
+    except:
+        html = requests.get(f"https://www.youtube.com/watch?v={vid}").text
         soup = BeautifulSoup(html, "html.parser")
+        title = soup.title.text.replace("- YouTube", "")
+        desc = soup.find("meta", {"name": "description"})
+        return title + " " + (desc["content"] if desc else ""), "Title+Description"
 
-        title = soup.find("title").text.replace("- YouTube", "")
-        description = ""
-        meta_desc = soup.find("meta", {"name": "description"})
-        if meta_desc:
-            description = meta_desc.get("content", "")
+def analyze(text):
+    text_l = text.lower()
+    found = {}
+    score = 0
 
-        return title + " " + description, "Title + Description"
-    except Exception:
-        raise Exception("❌ Could not extract any text from video")
+    for cat, words in categories.items():
+        hits = [w for w in words if w in text_l]
+        if hits:
+            found[cat] = hits
+            score += 0.25 * len(hits)
 
-def find_harmful_words(text):
-    words = set(text.lower().split())
-    return sorted(list(words & harmful_words))
+    return found, min(score, 1.0)
 
-# ===============================
-# MAIN
-# ===============================
 url = input("Enter YouTube video URL: ")
-video_id = extract_video_id(url)
+vid = extract_video_id(url)
 
-text, source = get_text_from_youtube(video_id)
+text, source = get_text(vid)
 
 X = vectorizer.transform([text])
-prediction = model.predict(X)[0]
+prob = model.predict_proba(X)[0][1]
 
-harm_words = find_harmful_words(text)
+found, keyword_score = analyze(text)
 
-print("\n========== RESULT ==========")
-print("📄 Text source used:", source)
+final_score = min((prob * 0.6) + (keyword_score * 0.4), 1.0)
 
-if prediction == 1:
-    print("❌ Video is HARMFUL")
+if final_score < 0.2:
+    level = "NOT HARMFUL"
+elif final_score < 0.5:
+    level = "MILD"
+elif final_score < 0.75:
+    level = "HARMFUL"
 else:
-    print("✅ Video is NOT HARMFUL")
-
-print("⚠ Harmful words found:", harm_words)
+    level = "VERY HARMFUL"
+print("\n========== RESULT ==========")
+print("Text source:", source)
+print("Severity Level:", level)
+print("Risk Score:", round(final_score, 2))
+print("Categories Detected:", list(found.keys()))
+print("Trigger Words:", found)

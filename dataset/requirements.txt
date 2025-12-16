@@ -1,7 +1,7 @@
-youtube-transcript-api
-nltk
-scikit-learn
 pandas
-openpyxl
+scikit-learn
+nltk
 joblib
-flask
+youtube-transcript-api==0.6.1
+requests
+beautifulsoup4
