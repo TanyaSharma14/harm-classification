@@ -1,37 +1,71 @@
-# YouTube Harmful Content Detection (BERT + Keyword Severity)
+YouTube Harmful Content Detection using BERT
+Overview
 
-This project fine-tunes a **BERT** binary classifier to detect whether text is **harmful** or **not harmful**, then applies it to a YouTube video by extracting its **transcript** (or fallback to **title + description**) and computing a final **severity score** using:
-- BERT probability of “harmful”
-- count of matched harmful keywords from a wordlist (`en.txt`)
+This project detects harmful or abusive content in YouTube videos by analyzing their transcripts, or when transcripts are unavailable, the video title and description.
+It combines a fine-tuned BERT-based classifier with keyword-based severity adjustment to provide a final harm classification.
 
----
+The system outputs:
 
-## What this does
+Harm category: NOT HARMFUL, MODERATE, or HARMFUL
 
-### 1) Model training (binary classification)
-- Reads `Harmful.csv` and uses the `transcript` column as harmful samples (`label = 1`)
-- Creates synthetic safe samples (`label = 0`) using repeated neutral sentences
-- Splits into train/test using stratified split
-- Tokenizes with `bert-base-uncased`
-- Fine-tunes `BertForSequenceClassification` for 2 classes
-- Saves model + tokenizer to `bert_model/`
+A continuous severity score
 
-### 2) YouTube video scoring
-Given a YouTube URL:
-- Extracts the video ID
-- Tries to fetch transcript using `youtube_transcript_api`
-- If transcript fails, uses **title + meta description** by scraping the page
-- Runs BERT on the gathered text
-- Loads harmful keywords from `en.txt` and counts matches
-- Computes severity:
+Detected harmful words (if any)
 
-- Outputs:
-- text source (Transcript vs Title+Description)
-- final label (NOT HARMFUL / MODERATE / HARMFUL)
-- severity score
-- detected harmful words
+Motivation
 
----
+Online video platforms face challenges in moderating harmful speech at scale. Manual moderation does not scale, and rule-based systems fail on contextual language.
 
-## Project structure (recommended)
+This project explores:
 
+Transformer-based text classification
+
+Real-world noisy data (YouTube transcripts)
+
+Trade-offs between ML predictions and heuristic signals
+
+Tech Stack
+
+Python
+
+PyTorch
+
+HuggingFace Transformers
+
+BERT (bert-base-uncased)
+
+scikit-learn
+
+YouTube Transcript API
+
+BeautifulSoup
+
+Google Colab
+
+ Dataset
+
+Harmful content: Harmful.csv containing harmful transcripts
+
+Safe content: Synthetic neutral sentences created to balance classes
+
+Labels:
+
+1 → Harmful
+
+0 → Safe
+
+The dataset is stratified during train-test split to maintain class balance.
+
+ Model Training
+
+Tokenizer: bert-base-uncased
+
+Max sequence length: 256
+
+Epochs: 3
+
+Batch size: 8
+
+Loss: Cross-Entropy (default in BertForSequenceClassification)
+
+The model is fine-tuned end-to-end using HuggingFace’s Trainer API
